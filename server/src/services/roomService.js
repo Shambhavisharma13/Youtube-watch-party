@@ -16,7 +16,6 @@ function generateUserId() {
 }
 
 function createRoom(username) {
-
     let roomId = generateRoomId();
 
     while (rooms.has(roomId)) {
@@ -39,11 +38,45 @@ function createRoom(username) {
     };
 }
 
+
+// JOIN ROOM
+function joinRoom(roomId, username) {
+
+    const room = rooms.get(roomId);
+
+    // Check if room exists
+    if (!room) {
+        return {
+            success: false,
+            message: "Room not found"
+        };
+    }
+
+    const userId = generateUserId();
+
+    const participant = {
+        id: userId,
+        username: username,
+        role: "PARTICIPANT"
+    };
+
+    room.participants.push(participant);
+
+    return {
+        success: true,
+        room,
+        participant
+    };
+}
+
+
 function getRoom(roomId) {
     return rooms.get(roomId);
 }
 
+
 module.exports = {
     createRoom,
+    joinRoom,
     getRoom
 };
