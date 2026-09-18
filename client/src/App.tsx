@@ -1,5 +1,6 @@
+
 import { useState, useEffect, useRef } from "react";
-import { io } from "socket.io-client";
+import { io, Socket } from "socket.io-client";
 import YouTubePlayer from "./YouTubePlayer";
 
 type Participant = {
@@ -8,61 +9,61 @@ type Participant = {
 };
 
 function App() {
-  // =========================
+  // =====================================
   // CREATE ROOM STATES
-  // =========================
+  // =====================================
 
   const [username, setUsername] = useState("");
   const [roomId, setRoomId] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // =========================
+  // =====================================
   // JOIN ROOM STATES
-  // =========================
+  // =====================================
 
   const [joinUsername, setJoinUsername] = useState("");
   const [joinRoomId, setJoinRoomId] = useState("");
   const [joinMessage, setJoinMessage] = useState("");
   const [joinLoading, setJoinLoading] = useState(false);
 
-  // =========================
-  // SOCKET STATE
-  // =========================
+  // =====================================
+  // YOUTUBE STATES
+  // =====================================
+
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [videoId, setVideoId] = useState("");
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  // =====================================
+  // SOCKET STATES
+  // =====================================
 
   const [socketStatus, setSocketStatus] =
     useState("Connecting...");
 
-  const socketRef = useRef<any>(null);
+  const socketRef = useRef<Socket | null>(null);
 
-  // =========================
+  // =====================================
   // PARTICIPANTS
-  // =========================
+  // =====================================
 
   const [participants, setParticipants] =
     useState<Participant[]>([]);
 
-  // =========================
-  // YOUTUBE STATES
-  // =========================
-
-  const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [videoId, setVideoId] = useState("");
-
-  const [isPlaying, setIsPlaying] =
-    useState(false);
-
-  const [currentTime, setCurrentTime] =
-    useState(0);
-
-  // =========================
+  // =====================================
   // SOCKET.IO CONNECTION
-  // =========================
+  // =====================================
 
   useEffect(() => {
     const socket = io("http://localhost:5000");
 
     socketRef.current = socket;
+
+    // =====================================
+    // SOCKET CONNECTED
+    // =====================================
 
     socket.on("connect", () => {
       setSocketStatus("🟢 Socket.IO Connected");
@@ -72,6 +73,10 @@ function App() {
         socket.id
       );
     });
+
+    // =====================================
+    // CONNECTION ERROR
+    // =====================================
 
     socket.on("connect_error", (error) => {
       setSocketStatus(
@@ -84,6 +89,10 @@ function App() {
       );
     });
 
+    // =====================================
+    // DISCONNECTED
+    // =====================================
+
     socket.on("disconnect", () => {
       setSocketStatus(
         "🟡 Socket.IO Disconnected"
@@ -94,106 +103,205 @@ function App() {
       );
     });
 
-    // =========================
+    // =====================================
     // PARTICIPANTS UPDATED
-    // =========================
+    // =====================================
 
     socket.on(
       "participants-updated",
       (data) => {
         console.log(
           "Updated participants:",
-          data.participants
+          data
         );
 
-        setParticipants(
-          data.participants
+        if (
+          data &&
+          Array.isArray(data.participants)
+        ) {
+          const updatedParticipants =
+            data.participants.map(
+              (participant: any) => ({
+                username:
+                  participant.username ||
+                  participant.name ||
+                  "Unknown User",
+
+                role:
+                  participant.role ||
+                  "PARTICIPANT",
+              })
+            );
+
+          console.log(
+            "Final participants:",
+            updatedParticipants
+          );
+
+          setParticipants(
+            updatedParticipants
+          );
+        }
+      }
+    );
+
+    // =====================================
+    // VIDEO PLAY RECEIVED
+    // =====================================
+
+    socket.on(
+      "video-play",
+      (data) => {
+        console.log(
+          "Received video-play:",
+          data
+        );
+
+        setCurrentTime(
+          Number(data?.currentTime) || 0
+        );
+
+        setIsPlaying(true);
+      }
+    );
+
+    // =====================================
+    // VIDEO PAUSE RECEIVED
+    // =====================================
+
+    socket.on(
+      "video-pause",
+      (data) => {
+        console.log(
+          "Received video-pause:",
+          data
+        );
+
+        setCurrentTime(
+          Number(data?.currentTime) || 0
+        );
+
+        setIsPlaying(false);
+      }
+    );
+
+    // =====================================
+    // VIDEO SEEK RECEIVED
+    // =====================================
+
+    socket.on(
+      "video-seek",
+      (data) => {
+        console.log(
+          "Received video-seek:",
+          data
+        );
+
+        setCurrentTime(
+          Number(data?.currentTime) || 0
         );
       }
     );
 
-    // =========================
-    // VIDEO PLAY
-    // =========================
-
-    socket.on("video-play", (data) => {
-      console.log(
-        "Video play received:",
-        data
-      );
-
-      setIsPlaying(true);
-
-      if (
-        typeof data.currentTime ===
-        "number"
-      ) {
-        setCurrentTime(
-          data.currentTime
-        );
-      }
-    });
-
-    // =========================
-    // VIDEO PAUSE
-    // =========================
-
-    socket.on("video-pause", (data) => {
-      console.log(
-        "Video pause received:",
-        data
-      );
-
-      setIsPlaying(false);
-
-      if (
-        typeof data.currentTime ===
-        "number"
-      ) {
-        setCurrentTime(
-          data.currentTime
-        );
-      }
-    });
-
-    // =========================
-    // VIDEO SEEK
-    // =========================
-
-    socket.on("video-seek", (data) => {
-      console.log(
-        "Video seek received:",
-        data
-      );
-
-      if (
-        typeof data.currentTime ===
-        "number"
-      ) {
-        setCurrentTime(
-          data.currentTime
-        );
-      }
-    });
-
-    // =========================
+    // =====================================
     // CLEANUP
-    // =========================
+    // =====================================
 
     return () => {
       socket.disconnect();
     };
   }, []);
 
-  // =========================
+  // =====================================
+  // EXTRACT YOUTUBE VIDEO ID
+  // =====================================
+
+  const extractVideoId = (
+    url: string
+  ): string | null => {
+    try {
+      const parsedUrl = new URL(url);
+
+      // youtube.com/watch?v=VIDEO_ID
+
+      if (
+        parsedUrl.hostname.includes(
+          "youtube.com"
+        )
+      ) {
+        const id =
+          parsedUrl.searchParams.get("v");
+
+        if (id) {
+          return id;
+        }
+      }
+
+      // youtu.be/VIDEO_ID
+
+      if (
+        parsedUrl.hostname.includes(
+          "youtu.be"
+        )
+      ) {
+        const id =
+          parsedUrl.pathname.substring(1);
+
+        if (id) {
+          return id;
+        }
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  // =====================================
+  // LOAD YOUTUBE VIDEO
+  // =====================================
+
+  const loadVideo = () => {
+    if (!youtubeUrl.trim()) {
+      alert(
+        "Please enter a YouTube URL"
+      );
+
+      return;
+    }
+
+    const id =
+      extractVideoId(youtubeUrl);
+
+    if (!id) {
+      alert(
+        "Invalid YouTube URL"
+      );
+
+      return;
+    }
+
+    console.log(
+      "Loading YouTube video:",
+      id
+    );
+
+    setVideoId(id);
+    setIsPlaying(false);
+    setCurrentTime(0);
+  };
+
+  // =====================================
   // CREATE ROOM
-  // =========================
+  // =====================================
 
   const createRoom = async () => {
     if (!username.trim()) {
       setMessage(
         "Please enter your username"
       );
+
       return;
     }
 
@@ -221,6 +329,11 @@ function App() {
       const data =
         await response.json();
 
+      console.log(
+        "Room created response:",
+        data
+      );
+
       if (!response.ok) {
         setMessage(
           data.message ||
@@ -230,30 +343,57 @@ function App() {
         return;
       }
 
-      setRoomId(data.roomId);
+      // =====================================
+      // SAVE ROOM ID
+      // =====================================
+
+      const createdRoomId =
+        data.roomId;
+
+      const hostUsername =
+        username.trim();
+
+      setRoomId(createdRoomId);
 
       console.log(
-        "Sending join-room:",
-        data.roomId,
-        data.username
+        "Room created:",
+        createdRoomId
       );
 
-      // Join Socket.IO room
-      if (socketRef.current) {
+      console.log(
+        "Sending HOST to socket:",
+        createdRoomId,
+        hostUsername
+      );
+
+      // =====================================
+      // JOIN SOCKET.IO ROOM
+      // =====================================
+
+      if (
+        socketRef.current &&
+        socketRef.current.connected
+      ) {
         socketRef.current.emit(
           "join-room",
           {
             roomId:
-              data.roomId,
+              createdRoomId,
 
             username:
-              data.username,
+              hostUsername,
+
+            role: "HOST",
           }
+        );
+      } else {
+        console.log(
+          "Socket not connected"
         );
       }
 
       setMessage(
-        `Room created! You are the ${data.role}.`
+        "Room created! You are the HOST."
       );
     } catch (error) {
       console.error(error);
@@ -266,9 +406,9 @@ function App() {
     }
   };
 
-  // =========================
+  // =====================================
   // JOIN ROOM
-  // =========================
+  // =====================================
 
   const joinRoom = async () => {
     if (!joinUsername.trim()) {
@@ -316,6 +456,11 @@ function App() {
       const data =
         await response.json();
 
+      console.log(
+        "Room joined response:",
+        data
+      );
+
       if (!response.ok) {
         setJoinMessage(
           data.message ||
@@ -325,30 +470,57 @@ function App() {
         return;
       }
 
-      setRoomId(data.roomId);
+      // =====================================
+      // SAVE ROOM ID
+      // =====================================
+
+      const joinedRoomId =
+        data.roomId;
+
+      const participantUsername =
+        joinUsername.trim();
+
+      setRoomId(joinedRoomId);
 
       console.log(
-        "Sending join-room:",
-        data.roomId,
-        data.username
+        "Room joined:",
+        joinedRoomId
       );
 
-      // Join Socket.IO room
-      if (socketRef.current) {
+      console.log(
+        "Sending PARTICIPANT to socket:",
+        joinedRoomId,
+        participantUsername
+      );
+
+      // =====================================
+      // JOIN SOCKET.IO ROOM
+      // =====================================
+
+      if (
+        socketRef.current &&
+        socketRef.current.connected
+      ) {
         socketRef.current.emit(
           "join-room",
           {
             roomId:
-              data.roomId,
+              joinedRoomId,
 
             username:
-              data.username,
+              participantUsername,
+
+            role: "PARTICIPANT",
           }
+        );
+      } else {
+        console.log(
+          "Socket not connected"
         );
       }
 
       setJoinMessage(
-        `Joined room successfully! You are the ${data.role}.`
+        "Joined room successfully! You are the PARTICIPANT."
       );
     } catch (error) {
       console.error(error);
@@ -361,87 +533,21 @@ function App() {
     }
   };
 
-  // =========================
-  // EXTRACT YOUTUBE VIDEO ID
-  // =========================
+  // =====================================
+  // VIDEO PLAY
+  // =====================================
 
-  const extractVideoId = (
-    url: string
+  const handlePlay = (
+    time: number
   ) => {
-    try {
-      const parsedUrl =
-        new URL(url);
-
-      if (
-        parsedUrl.hostname.includes(
-          "youtube.com"
-        )
-      ) {
-        return parsedUrl.searchParams.get(
-          "v"
-        );
-      }
-
-      if (
-        parsedUrl.hostname.includes(
-          "youtu.be"
-        )
-      ) {
-        return parsedUrl.pathname.substring(
-          1
-        );
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
-  };
-
-  // =========================
-  // LOAD YOUTUBE VIDEO
-  // =========================
-
-  const loadVideo = () => {
-    if (!youtubeUrl.trim()) {
-      alert(
-        "Please enter a YouTube URL"
-      );
-
-      return;
-    }
-
-    const id =
-      extractVideoId(
-        youtubeUrl.trim()
-      );
-
-    if (!id) {
-      alert(
-        "Invalid YouTube URL"
-      );
-
-      return;
-    }
+    setIsPlaying(true);
+    setCurrentTime(time);
 
     console.log(
-      "YouTube Video ID:",
-      id
+      "Sending video-play:",
+      roomId,
+      time
     );
-
-    setVideoId(id);
-
-    setCurrentTime(0);
-
-    setIsPlaying(false);
-  };
-
-  // =========================
-  // PLAY VIDEO
-  // =========================
-
-  const playVideo = () => {
-    setIsPlaying(true);
 
     if (
       socketRef.current &&
@@ -451,18 +557,27 @@ function App() {
         "video-play",
         {
           roomId,
-          currentTime,
+          currentTime: time,
         }
       );
     }
   };
 
-  // =========================
-  // PAUSE VIDEO
-  // =========================
+  // =====================================
+  // VIDEO PAUSE
+  // =====================================
 
-  const pauseVideo = () => {
+  const handlePause = (
+    time: number
+  ) => {
     setIsPlaying(false);
+    setCurrentTime(time);
+
+    console.log(
+      "Sending video-pause:",
+      roomId,
+      time
+    );
 
     if (
       socketRef.current &&
@@ -472,34 +587,79 @@ function App() {
         "video-pause",
         {
           roomId,
-          currentTime,
+          currentTime: time,
         }
       );
     }
   };
 
-  // =========================
-  // TIME UPDATE
-  // =========================
+  // =====================================
+  // VIDEO SEEK
+  // =====================================
 
-  const handleTimeUpdate = (
+  const handleSeek = (
     time: number
   ) => {
     setCurrentTime(time);
+
+    console.log(
+      "Sending video-seek:",
+      roomId,
+      time
+    );
+
+    if (
+      socketRef.current &&
+      roomId
+    ) {
+      socketRef.current.emit(
+        "video-seek",
+        {
+          roomId,
+          currentTime: time,
+        }
+      );
+    }
   };
 
-  // =========================
+  // =====================================
+  // MANUAL PLAY BUTTON
+  // =====================================
+
+  const playVideo = () => {
+    const time =
+      currentTime || 0;
+
+    handlePlay(time);
+  };
+
+  // =====================================
+  // MANUAL PAUSE BUTTON
+  // =====================================
+
+  const pauseVideo = () => {
+    const time =
+      currentTime || 0;
+
+    handlePause(time);
+  };
+
+  // =====================================
   // UI
-  // =========================
+  // =====================================
 
   return (
     <div
       style={{
-        maxWidth: "1000px",
+        maxWidth: "900px",
         margin: "0 auto",
         padding: "30px",
+        fontFamily:
+          "Arial, sans-serif",
       }}
     >
+      {/* TITLE */}
+
       <h1>
         🎬 YouTube Watch Party
       </h1>
@@ -511,12 +671,12 @@ function App() {
 
       <hr />
 
-      {/* =========================
-          CREATE ROOM
-      ========================= */}
+      {/* CREATE ROOM */}
 
       <section>
-        <h2>Create Room</h2>
+        <h2>
+          Create Room
+        </h2>
 
         <input
           type="text"
@@ -527,6 +687,10 @@ function App() {
               e.target.value
             )
           }
+          style={{
+            padding: "8px",
+            width: "300px",
+          }}
         />
 
         <br />
@@ -535,6 +699,12 @@ function App() {
         <button
           onClick={createRoom}
           disabled={loading}
+          style={{
+            padding:
+              "10px 20px",
+            cursor:
+              "pointer",
+          }}
         >
           {loading
             ? "Creating..."
@@ -557,18 +727,20 @@ function App() {
         )}
 
         {message && (
-          <p>{message}</p>
+          <p>
+            {message}
+          </p>
         )}
       </section>
 
       <hr />
 
-      {/* =========================
-          JOIN ROOM
-      ========================= */}
+      {/* JOIN ROOM */}
 
       <section>
-        <h2>Join Room</h2>
+        <h2>
+          Join Room
+        </h2>
 
         <input
           type="text"
@@ -579,6 +751,10 @@ function App() {
               e.target.value
             )
           }
+          style={{
+            padding: "8px",
+            width: "300px",
+          }}
         />
 
         <br />
@@ -593,6 +769,10 @@ function App() {
               e.target.value
             )
           }
+          style={{
+            padding: "8px",
+            width: "300px",
+          }}
         />
 
         <br />
@@ -601,6 +781,12 @@ function App() {
         <button
           onClick={joinRoom}
           disabled={joinLoading}
+          style={{
+            padding:
+              "10px 20px",
+            cursor:
+              "pointer",
+          }}
         >
           {joinLoading
             ? "Joining..."
@@ -616,56 +802,11 @@ function App() {
 
       <hr />
 
-      {/* =========================
-          PARTICIPANTS
-      ========================= */}
+      {/* YOUTUBE VIDEO */}
 
       <section>
         <h2>
-          👥 Participants
-        </h2>
-
-        {participants.length ===
-        0 ? (
-          <p>
-            No participants yet.
-          </p>
-        ) : (
-          <ul>
-            {participants.map(
-              (
-                participant,
-                index
-              ) => (
-                <li
-                  key={index}
-                >
-                  🟢{" "}
-                  <strong>
-                    {
-                      participant.username
-                    }
-                  </strong>{" "}
-                  —{" "}
-                  {
-                    participant.role
-                  }
-                </li>
-              )
-            )}
-          </ul>
-        )}
-      </section>
-
-      <hr />
-
-      {/* =========================
-          YOUTUBE VIDEO
-      ========================= */}
-
-      <section>
-        <h2>
-          📺 YouTube Video
+          🎥 YouTube Video
         </h2>
 
         <input
@@ -678,7 +819,8 @@ function App() {
             )
           }
           style={{
-            width: "500px",
+            width: "400px",
+            padding: "8px",
           }}
         />
 
@@ -686,58 +828,135 @@ function App() {
           onClick={loadVideo}
           style={{
             marginLeft: "10px",
+            padding:
+              "8px 15px",
+            cursor:
+              "pointer",
           }}
         >
           Load Video
         </button>
 
-        <br />
-        <br />
-
         {videoId && (
-          <>
+          <div
+            style={{
+              marginTop: "20px",
+            }}
+          >
+            {/* PLAYER */}
+
             <YouTubePlayer
               videoId={videoId}
               isPlaying={isPlaying}
-              currentTime={
-                currentTime
-              }
-              onTimeUpdate={
-                handleTimeUpdate
-              }
+              currentTime={currentTime}
+              onPlay={handlePlay}
+              onPause={handlePause}
+              onSeek={handleSeek}
             />
 
-            <br />
+            {/* PLAY / PAUSE BUTTONS */}
 
-            <button
-              onClick={
-                playVideo
-              }
-              disabled={isPlaying}
-            >
-              ▶️ Play
-            </button>
-
-            <button
-              onClick={
-                pauseVideo
-              }
-              disabled={!isPlaying}
+            <div
               style={{
-                marginLeft: "10px",
+                marginTop: "15px",
+                display: "flex",
+                gap: "10px",
               }}
             >
-              ⏸️ Pause
-            </button>
+              <button
+                onClick={playVideo}
+                style={{
+                  padding:
+                    "10px 25px",
+                  fontSize:
+                    "16px",
+                  cursor:
+                    "pointer",
+                }}
+              >
+                ▶️ Play
+              </button>
+
+              <button
+                onClick={pauseVideo}
+                style={{
+                  padding:
+                    "10px 25px",
+                  fontSize:
+                    "16px",
+                  cursor:
+                    "pointer",
+                }}
+              >
+                ⏸️ Pause
+              </button>
+            </div>
+
+            {/* VIDEO STATUS */}
+
+            <p>
+              Status:{" "}
+              <strong>
+                {isPlaying
+                  ? "▶️ Playing"
+                  : "⏸️ Paused"}
+              </strong>
+            </p>
 
             <p>
               Current Time:{" "}
-              {Math.floor(
-                currentTime
-              )}{" "}
-              seconds
+              {currentTime.toFixed(1)}
+              s
             </p>
-          </>
+          </div>
+        )}
+      </section>
+
+      <hr />
+
+      {/* PARTICIPANTS */}
+
+      <section>
+        <h2>
+          👥 Participants
+        </h2>
+
+        {participants.length === 0 ? (
+          <p>
+            No participants yet.
+          </p>
+        ) : (
+          <ul>
+            {participants.map(
+              (
+                participant,
+                index
+              ) => (
+                <li
+                  key={`${participant.username}-${index}`}
+                  style={{
+                    marginBottom:
+                      "10px",
+                  }}
+                >
+                  🟢{" "}
+                  <strong>
+                    {
+                      participant.username
+                    }
+                  </strong>
+
+                  {" — "}
+
+                  <span>
+                    {
+                      participant.role
+                    }
+                  </span>
+                </li>
+              )
+            )}
+          </ul>
         )}
       </section>
     </div>

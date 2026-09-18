@@ -1,154 +1,258 @@
-import { useEffect, useRef } from "react";
 
-type YouTubePlayerProps = {
+import { useEffect, useRef } from "react";
+import YouTube from "react-youtube";
+
+type Props = {
   videoId: string;
   isPlaying: boolean;
   currentTime: number;
-  onTimeUpdate: (time: number) => void;
+  onPlay: (time: number) => void;
+  onPause: (time: number) => void;
+  onSeek: (time: number) => void;
 };
 
 function YouTubePlayer({
   videoId,
   isPlaying,
   currentTime,
-  onTimeUpdate,
-}: YouTubePlayerProps) {
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const intervalRef = useRef<number | null>(null);
+  onPlay,
+  onPause,
+  onSeek,
+}: Props) {
+  const playerRef = useRef<any>(null);
 
-  // =========================
-  // SEND COMMAND TO YOUTUBE
-  // =========================
-  const sendCommand = (command: string, value?: number) => {
-    if (!iframeRef.current) {
-      return;
-    }
+  // Prevent infinite synchronization loop
+  const isRemoteUpdate = useRef(false);
 
-    iframeRef.current.contentWindow?.postMessage(
-      JSON.stringify({
-        event: "command",
-        func: command,
-        args: value !== undefined ? [value] : [],
-      }),
-      "*"
-    );
-  };
+  // =====================================
+  // YOUTUBE PLAYER READY
+  // =====================================
 
-  // =========================
-  // PLAY / PAUSE
-  // =========================
-  useEffect(() => {
-    if (!videoId) {
-      return;
+  const handleReady = (event: any) => {
+    console.log("YouTube READY");
+
+    playerRef.current = event.target;
+
+    if (currentTime > 0) {
+      event.target.seekTo(currentTime, true);
     }
 
     if (isPlaying) {
-      sendCommand("playVideo");
+      event.target.playVideo();
+    }
+  };
+
+  // =====================================
+  // PLAY / PAUSE STATE CHANGE
+  // =====================================
+
+  const handleStateChange = (event: any) => {
+    const player = event.target;
+
+    // 1 = PLAYING
+    if (event.data === 1) {
+      const time = player.getCurrentTime();
+
+      console.log(
+        "YouTube PLAY:",
+        time
+      );
+
+      // Don't send remote changes back
+      if (!isRemoteUpdate.current) {
+        onPlay(time);
+      }
+
+      isRemoteUpdate.current = false;
+    }
+
+    // 2 = PAUSED
+    if (event.data === 2) {
+      const time = player.getCurrentTime();
+
+      console.log(
+        "YouTube PAUSE:",
+        time
+      );
+
+      // Don't send remote changes back
+      if (!isRemoteUpdate.current) {
+        onPause(time);
+      }
+
+      isRemoteUpdate.current = false;
+    }
+  };
+
+  // =====================================
+  // DETECT MANUAL SEEK
+  // =====================================
+
+  const handlePlaybackRateChange = () => {
+    console.log("Playback rate changed");
+  };
+
+  // =====================================
+  // CONTROL PLAYER FROM PROPS
+  // =====================================
+
+  useEffect(() => {
+    if (!playerRef.current) {
+      return;
+    }
+
+    const player = playerRef.current;
+
+    const playerTime =
+      player.getCurrentTime();
+
+    // =====================================
+    // SYNCHRONIZE CURRENT TIME
+    // =====================================
+
+    if (
+      Math.abs(
+        playerTime - currentTime
+      ) > 1
+    ) {
+      console.log(
+        "Synchronizing video time:",
+        currentTime
+      );
+
+      isRemoteUpdate.current = true;
+
+      player.seekTo(
+        currentTime,
+        true
+      );
+    }
+
+    // =====================================
+    // SYNCHRONIZE PLAY / PAUSE
+    // =====================================
+
+    if (isPlaying) {
+      if (
+        player.getPlayerState() !== 1
+      ) {
+        console.log(
+          "Remote PLAY"
+        );
+
+        isRemoteUpdate.current = true;
+
+        player.playVideo();
+      }
     } else {
-      sendCommand("pauseVideo");
-    }
-  }, [isPlaying, videoId]);
+      if (
+        player.getPlayerState() === 1
+      ) {
+        console.log(
+          "Remote PAUSE"
+        );
 
-  // =========================
-  // SEEK
-  // =========================
-  useEffect(() => {
-    if (!videoId) {
-      return;
-    }
+        isRemoteUpdate.current = true;
 
-    if (currentTime > 0) {
-      sendCommand("seekTo", currentTime);
-    }
-  }, [currentTime, videoId]);
-
-  // =========================
-  // CURRENT TIME
-  // =========================
-  useEffect(() => {
-    if (!videoId) {
-      return;
-    }
-
-    intervalRef.current = window.setInterval(() => {
-      sendCommand("getCurrentTime");
-    }, 1000);
-
-    return () => {
-      if (intervalRef.current !== null) {
-        window.clearInterval(intervalRef.current);
+        player.pauseVideo();
       }
-    };
-  }, [videoId]);
+    }
+  }, [
+    isPlaying,
+    currentTime,
+  ]);
 
-  // =========================
-  // RECEIVE YOUTUBE MESSAGE
-  // =========================
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (typeof event.data !== "string") {
-        return;
-      }
+  // =====================================
+  // PLAYER OPTIONS
+  // =====================================
 
-      try {
-        const data = JSON.parse(event.data);
+  const opts = {
+    width: "100%",
+    height: "450",
 
-        if (
-          data.event === "infoDelivery" &&
-          data.info &&
-          typeof data.info.currentTime === "number"
-        ) {
-          onTimeUpdate(data.info.currentTime);
-        }
-      } catch {
-        // Ignore non-JSON messages
-      }
-    };
+    playerVars: {
+      autoplay: 0,
+      controls: 1,
+      rel: 0,
+      modestbranding: 1,
+    },
+  };
 
-    window.addEventListener("message", handleMessage);
-
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
-  }, [onTimeUpdate]);
-
-  // =========================
-  // NO VIDEO
-  // =========================
-  if (!videoId) {
-    return (
-      <div>
-        <p>No YouTube video selected.</p>
-      </div>
-    );
-  }
-
-  // =========================
-  // YOUTUBE PLAYER
-  // =========================
   return (
-    <div>
-      <h2>🎬 Watch Party Video</h2>
-
-      <iframe
-        ref={iframeRef}
-        width="800"
-        height="450"
-        src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&origin=http://localhost:5173`}
-        title="YouTube Watch Party Player"
-        allow="autoplay; encrypted-media"
-        allowFullScreen
+    <div
+      style={{
+        width: "100%",
+        maxWidth: "800px",
+        margin: "20px auto",
+      }}
+    >
+      <YouTube
+        videoId={videoId}
+        onReady={handleReady}
+        onStateChange={handleStateChange}
+        onPlaybackRateChange={
+          handlePlaybackRateChange
+        }
+        opts={opts}
       />
 
-      <p>
-        Current Time: {Math.floor(currentTime)} seconds
-      </p>
+      {/* SEEK BUTTONS FOR TESTING */}
 
-      <p>
-        Status: {isPlaying ? "▶️ Playing" : "⏸️ Paused"}
-      </p>
+      <div
+        style={{
+          marginTop: "10px",
+          display: "flex",
+          gap: "10px",
+        }}
+      >
+        <button
+          onClick={() => {
+            if (!playerRef.current) {
+              return;
+            }
+
+            const newTime =
+              Math.max(
+                0,
+                playerRef.current.getCurrentTime() -
+                  10
+              );
+
+            playerRef.current.seekTo(
+              newTime,
+              true
+            );
+
+            onSeek(newTime);
+          }}
+        >
+          ⏪ -10 sec
+        </button>
+
+        <button
+          onClick={() => {
+            if (!playerRef.current) {
+              return;
+            }
+
+            const newTime =
+              playerRef.current.getCurrentTime() +
+              10;
+
+            playerRef.current.seekTo(
+              newTime,
+              true
+            );
+
+            onSeek(newTime);
+          }}
+        >
+          ⏩ +10 sec
+        </button>
+      </div>
     </div>
   );
 }
 
 export default YouTubePlayer;
+

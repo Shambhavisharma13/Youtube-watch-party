@@ -7,9 +7,9 @@ const roomRoutes = require("./routes/roomRoutes");
 
 const app = express();
 
-// =========================
-// MIDDLEWARE
-// =========================
+// =====================================
+// CORS
+// =====================================
 
 app.use(
   cors({
@@ -20,29 +20,29 @@ app.use(
 
 app.use(express.json());
 
-// =========================
-// TEST ROUTE
-// =========================
+// =====================================
+// BASIC ROUTE
+// =====================================
 
 app.get("/", (req, res) => {
   res.send("YouTube Watch Party Server is running");
 });
 
-// =========================
+// =====================================
 // ROOM API ROUTES
-// =========================
+// =====================================
 
 app.use("/api/rooms", roomRoutes);
 
-// =========================
-// CREATE HTTP SERVER
-// =========================
+// =====================================
+// HTTP SERVER
+// =====================================
 
 const server = http.createServer(app);
 
-// =========================
-// SOCKET.IO SERVER
-// =========================
+// =====================================
+// SOCKET.IO
+// =====================================
 
 const io = new Server(server, {
   cors: {
@@ -51,237 +51,365 @@ const io = new Server(server, {
   },
 });
 
-// =========================
-// STORE CONNECTED USERS
-// =========================
+// =====================================
+// SOCKET ROOMS
+// =====================================
 
 const rooms = {};
 
-// =========================
-// SOCKET.IO CONNECTION
-// =========================
+// =====================================
+// SOCKET CONNECTION
+// =====================================
 
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("=================================");
+  console.log("USER CONNECTED");
+  console.log("Socket ID:", socket.id);
+  console.log("=================================");
 
-  // =========================
+  // =====================================
   // JOIN ROOM
-  // =========================
+  // =====================================
 
   socket.on("join-room", (data) => {
-    console.log(
-      "join-room event received:",
-      data
-    );
+    console.log("\nJOIN ROOM EVENT:");
+    console.log(data);
 
-    const { roomId, username } = data;
+    const {
+      roomId,
+      username,
+      role,
+    } = data || {};
 
+    // Check required data
     if (!roomId || !username) {
       console.log(
-        "Missing roomId or username"
+        "ERROR: roomId or username missing"
       );
       return;
     }
 
-    // Join Socket.IO room
-    socket.join(roomId);
+    // =====================================
+    // CREATE ROOM IF NOT EXISTS
+    // =====================================
 
-    // Create room if it doesn't exist
     if (!rooms[roomId]) {
       rooms[roomId] = [];
     }
 
-    // Prevent duplicate socket entry
-    const alreadyJoined =
-      rooms[roomId].some(
+    // =====================================
+    // PREVENT DUPLICATE SOCKET
+    // =====================================
+
+    const alreadyJoined = rooms[roomId].some(
+      (user) => user.socketId === socket.id
+    );
+
+    if (alreadyJoined) {
+      console.log(
+        `${username} already joined ${roomId}`
+      );
+      return;
+    }
+
+    // =====================================
+    // DETERMINE ROLE
+    // =====================================
+
+    let userRole = role;
+
+    if (!userRole) {
+      userRole =
+        rooms[roomId].length === 0
+          ? "HOST"
+          : "PARTICIPANT";
+    }
+
+    // =====================================
+    // JOIN SOCKET.IO ROOM
+    // =====================================
+
+    socket.join(roomId);
+
+    // Save room information on socket
+    socket.roomId = roomId;
+    socket.username = username;
+
+    // =====================================
+    // ADD USER TO ROOM
+    // =====================================
+
+    const participant = {
+      socketId: socket.id,
+      username: username,
+      role: userRole,
+    };
+
+    rooms[roomId].push(participant);
+
+    console.log(
+      `\n${username} joined room ${roomId}`
+    );
+
+    console.log(
+      "PARTICIPANTS IN ROOM:"
+    );
+
+    console.log(rooms[roomId]);
+
+    // =====================================
+    // CREATE PARTICIPANT LIST
+    // =====================================
+
+    const participantList =
+      rooms[roomId].map((user) => ({
+        username: user.username,
+        role: user.role,
+      }));
+
+    console.log(
+      "Sending participants-updated:"
+    );
+
+    console.log(participantList);
+
+    // =====================================
+    // SEND PARTICIPANTS TO ROOM
+    // =====================================
+
+    io.to(roomId).emit(
+      "participants-updated",
+      {
+        participants: participantList,
+      }
+    );
+  });
+
+  // =====================================
+  // VIDEO PLAY
+  // =====================================
+
+  socket.on("video-play", (data) => {
+    console.log("\nVIDEO PLAY:");
+    console.log(data);
+
+    const {
+      roomId,
+      currentTime,
+    } = data || {};
+
+    if (!roomId) {
+      console.log(
+        "VIDEO PLAY ERROR: roomId missing"
+      );
+      return;
+    }
+
+    console.log(
+      `Broadcasting PLAY to room ${roomId} at ${
+        currentTime || 0
+      } seconds`
+    );
+
+    // Send PLAY to everyone except sender
+    socket.to(roomId).emit(
+      "video-play",
+      {
+        currentTime: currentTime || 0,
+      }
+    );
+  });
+
+  // =====================================
+  // VIDEO PAUSE
+  // =====================================
+
+  socket.on("video-pause", (data) => {
+    console.log("\nVIDEO PAUSE:");
+    console.log(data);
+
+    const {
+      roomId,
+      currentTime,
+    } = data || {};
+
+    if (!roomId) {
+      console.log(
+        "VIDEO PAUSE ERROR: roomId missing"
+      );
+      return;
+    }
+
+    console.log(
+      `Broadcasting PAUSE to room ${roomId} at ${
+        currentTime || 0
+      } seconds`
+    );
+
+    // Send PAUSE to everyone except sender
+    socket.to(roomId).emit(
+      "video-pause",
+      {
+        currentTime: currentTime || 0,
+      }
+    );
+  });
+
+  // =====================================
+  // VIDEO SEEK
+  // =====================================
+
+  socket.on("video-seek", (data) => {
+    console.log("\nVIDEO SEEK:");
+    console.log(data);
+
+    const {
+      roomId,
+      currentTime,
+    } = data || {};
+
+    if (!roomId) {
+      console.log(
+        "VIDEO SEEK ERROR: roomId missing"
+      );
+      return;
+    }
+
+    console.log(
+      `Broadcasting SEEK to room ${roomId} at ${
+        currentTime || 0
+      } seconds`
+    );
+
+    // Send SEEK to everyone except sender
+    socket.to(roomId).emit(
+      "video-seek",
+      {
+        currentTime: currentTime || 0,
+      }
+    );
+  });
+
+  // =====================================
+  // DISCONNECT
+  // =====================================
+
+  socket.on("disconnect", () => {
+    console.log(
+      "\nUSER DISCONNECTED:",
+      socket.id
+    );
+
+    // =====================================
+    // GET ROOM ID
+    // =====================================
+
+    const roomId = socket.roomId;
+
+    if (!roomId) {
+      console.log(
+        "Socket was not inside a room"
+      );
+      return;
+    }
+
+    // =====================================
+    // CHECK ROOM
+    // =====================================
+
+    if (!rooms[roomId]) {
+      return;
+    }
+
+    // =====================================
+    // FIND USER
+    // =====================================
+
+    const index =
+      rooms[roomId].findIndex(
         (user) =>
           user.socketId === socket.id
       );
 
-    if (alreadyJoined) {
-      console.log(
-        `${username} is already in room ${roomId}`
-      );
+    if (index === -1) {
       return;
     }
 
-    // Determine role
-    const role =
-      rooms[roomId].length === 0
-        ? "HOST"
-        : "PARTICIPANT";
+    // =====================================
+    // REMOVE USER
+    // =====================================
 
-    // Add user
-    rooms[roomId].push({
-      socketId: socket.id,
-      username: username,
-      role: role,
-    });
+    const removedUser =
+      rooms[roomId][index];
+
+    rooms[roomId].splice(index, 1);
 
     console.log(
-      `${username} joined room ${roomId}`
+      `${removedUser.username} left room ${roomId}`
     );
 
-    console.log(
-      "Current participants:",
-      rooms[roomId]
-    );
+    // =====================================
+    // IF HOST LEAVES
+    // MAKE FIRST PARTICIPANT HOST
+    // =====================================
 
-    // Send updated participant list
+    if (
+      removedUser.role === "HOST" &&
+      rooms[roomId].length > 0
+    ) {
+      rooms[roomId][0].role = "HOST";
+
+      console.log(
+        `${rooms[roomId][0].username} is now HOST`
+      );
+    }
+
+    // =====================================
+    // CREATE UPDATED PARTICIPANT LIST
+    // =====================================
+
+    const participantList =
+      rooms[roomId].map((user) => ({
+        username: user.username,
+        role: user.role,
+      }));
+
+    // =====================================
+    // SEND UPDATED PARTICIPANTS
+    // =====================================
+
     io.to(roomId).emit(
       "participants-updated",
       {
-        participants:
-          rooms[roomId].map((user) => ({
-            username: user.username,
-            role: user.role,
-          })),
+        participants: participantList,
       }
     );
-  });
 
-  // =========================
-  // VIDEO PLAY
-  // =========================
+    // =====================================
+    // DELETE EMPTY ROOM
+    // =====================================
 
-  socket.on("video-play", (data) => {
-    console.log(
-      "video-play event received:",
-      data
-    );
+    if (rooms[roomId].length === 0) {
+      delete rooms[roomId];
 
-    const {
-      roomId,
-      currentTime,
-    } = data;
-
-    if (!roomId) {
       console.log(
-        "Missing roomId for video-play"
+        `Room ${roomId} deleted`
       );
-      return;
-    }
-
-    console.log(
-      `Broadcasting PLAY to room ${roomId} at ${currentTime || 0}s`
-    );
-
-    // Send to everyone except sender
-    socket.to(roomId).emit(
-      "video-play",
-      {
-        currentTime:
-          currentTime || 0,
-      }
-    );
-  });
-
-  // =========================
-  // VIDEO PAUSE
-  // =========================
-
-  socket.on("video-pause", (data) => {
-    console.log(
-      "video-pause event received:",
-      data
-    );
-
-    const {
-      roomId,
-      currentTime,
-    } = data;
-
-    if (!roomId) {
-      console.log(
-        "Missing roomId for video-pause"
-      );
-      return;
-    }
-
-    console.log(
-      `Broadcasting PAUSE to room ${roomId} at ${currentTime || 0}s`
-    );
-
-    // Send to everyone except sender
-    socket.to(roomId).emit(
-      "video-pause",
-      {
-        currentTime:
-          currentTime || 0,
-      }
-    );
-  });
-
-  // =========================
-  // DISCONNECT
-  // =========================
-
-  socket.on("disconnect", () => {
-    console.log(
-      "User disconnected:",
-      socket.id
-    );
-
-    // Find user's room
-    for (const roomId in rooms) {
-      const userIndex =
-        rooms[roomId].findIndex(
-          (user) =>
-            user.socketId === socket.id
-        );
-
-      if (userIndex !== -1) {
-        const removedUser =
-          rooms[roomId][userIndex];
-
-        // Remove user
-        rooms[roomId].splice(
-          userIndex,
-          1
-        );
-
-        console.log(
-          `${removedUser.username} left room ${roomId}`
-        );
-
-        // Send updated participant list
-        io.to(roomId).emit(
-          "participants-updated",
-          {
-            participants:
-              rooms[roomId].map(
-                (user) => ({
-                  username:
-                    user.username,
-                  role: user.role,
-                })
-              ),
-          }
-        );
-
-        // Delete empty room
-        if (
-          rooms[roomId].length === 0
-        ) {
-          delete rooms[roomId];
-
-          console.log(
-            `Room ${roomId} deleted`
-          );
-        }
-
-        break;
-      }
     }
   });
 });
 
-// =========================
+// =====================================
 // START SERVER
-// =========================
+// =====================================
 
-server.listen(5000, () => {
+const PORT = 5000;
+
+server.listen(PORT, () => {
+  console.log("=================================");
+  console.log("YouTube Watch Party Server");
   console.log(
-    "Server running on http://localhost:5000"
+    `Server running on http://localhost:${PORT}`
   );
+  console.log("=================================");
 });
