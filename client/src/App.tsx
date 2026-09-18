@@ -24,6 +24,11 @@ function App() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [videoId, setVideoId] = useState("");
 
+  // Step 10.2
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const [currentTime, setCurrentTime] = useState(0);
+
   // =========================
   // JOIN ROOM STATES
   // =========================
@@ -124,6 +129,7 @@ function App() {
       setMessage(
         "Please enter your username"
       );
+
       return;
     }
 
@@ -153,6 +159,7 @@ function App() {
           data.message ||
             "Failed to create room"
         );
+
         return;
       }
 
@@ -179,12 +186,14 @@ function App() {
       setMessage(
         `Room created! You are the ${data.role}.`
       );
+
     } catch (error) {
       console.error(error);
 
       setMessage(
         "Cannot connect to server"
       );
+
     } finally {
       setLoading(false);
     }
@@ -199,6 +208,7 @@ function App() {
       setJoinMessage(
         "Please enter your username"
       );
+
       return;
     }
 
@@ -206,6 +216,7 @@ function App() {
       setJoinMessage(
         "Please enter the room code"
       );
+
       return;
     }
 
@@ -240,6 +251,7 @@ function App() {
           data.message ||
             "Failed to join room"
         );
+
         return;
       }
 
@@ -266,12 +278,14 @@ function App() {
       setJoinMessage(
         `Joined room successfully! You are the ${data.role}.`
       );
+
     } catch (error) {
       console.error(error);
 
       setJoinMessage(
         "Cannot connect to server"
       );
+
     } finally {
       setJoinLoading(false);
     }
@@ -304,7 +318,8 @@ function App() {
       else if (
         url.hostname.includes("youtu.be")
       ) {
-        id = url.pathname.substring(1);
+        id =
+          url.pathname.substring(1);
       }
 
       if (!id) {
@@ -314,10 +329,15 @@ function App() {
 
       setVideoId(id);
 
+      // Reset video state
+      setIsPlaying(false);
+      setCurrentTime(0);
+
       console.log(
         "YouTube video ID:",
         id
       );
+
     } catch (error) {
       console.error(error);
 
@@ -336,7 +356,9 @@ function App() {
           TITLE
       ========================= */}
 
-      <h1>🎬 YouTube Watch Party</h1>
+      <h1>
+        🎬 YouTube Watch Party
+      </h1>
 
       <p>
         Socket status: {socketStatus}
@@ -349,6 +371,7 @@ function App() {
       ========================= */}
 
       <section>
+
         <h2>Create Room</h2>
 
         <input
@@ -374,18 +397,25 @@ function App() {
 
         {roomId && (
           <div>
-            <h3>Room Created!</h3>
+
+            <h3>
+              Room Created!
+            </h3>
 
             <p>
               Room Code:{" "}
-              <strong>{roomId}</strong>
+              <strong>
+                {roomId}
+              </strong>
             </p>
+
           </div>
         )}
 
         {message && (
           <p>{message}</p>
         )}
+
       </section>
 
       <hr />
@@ -395,6 +425,7 @@ function App() {
       ========================= */}
 
       <section>
+
         <h2>Join Room</h2>
 
         <input
@@ -435,8 +466,11 @@ function App() {
         </button>
 
         {joinMessage && (
-          <p>{joinMessage}</p>
+          <p>
+            {joinMessage}
+          </p>
         )}
+
       </section>
 
       <hr />
@@ -446,7 +480,10 @@ function App() {
       ========================= */}
 
       <section>
-        <h2>👥 Participants</h2>
+
+        <h2>
+          👥 Participants
+        </h2>
 
         {participants.length === 0 ? (
           <p>
@@ -454,20 +491,28 @@ function App() {
           </p>
         ) : (
           <ul>
+
             {participants.map(
               (participant, index) => (
                 <li key={index}>
+
                   🟢{" "}
+
                   <strong>
                     {participant.username}
                   </strong>{" "}
+
                   —{" "}
+
                   {participant.role}
+
                 </li>
               )
             )}
+
           </ul>
         )}
+
       </section>
 
       <hr />
@@ -477,7 +522,10 @@ function App() {
       ========================= */}
 
       <section>
-        <h2>🎥 YouTube Video</h2>
+
+        <h2>
+          🎥 YouTube Video
+        </h2>
 
         <input
           type="text"
@@ -499,8 +547,42 @@ function App() {
         {videoId && (
           <YouTubePlayer
             videoId={videoId}
+            onPlay={(time) => {
+              setIsPlaying(true);
+              setCurrentTime(time);
+            }}
+            onPause={(time) => {
+              setIsPlaying(false);
+              setCurrentTime(time);
+            }}
           />
         )}
+
+        {/* =========================
+            VIDEO STATUS
+        ========================= */}
+
+        {videoId && (
+          <div>
+
+            <p>
+              Video status:{" "}
+              <strong>
+                {isPlaying
+                  ? "▶ Playing"
+                  : "⏸ Paused"}
+              </strong>
+            </p>
+
+            <p>
+              Current time:{" "}
+              {currentTime.toFixed(2)}
+              seconds
+            </p>
+
+          </div>
+        )}
+
       </section>
 
     </div>
