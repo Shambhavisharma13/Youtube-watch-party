@@ -6,6 +6,7 @@ type Props = {
   videoId: string;
   isPlaying: boolean;
   currentTime: number;
+  canControl?: boolean;
   onPlay: (time: number) => void;
   onPause: (time: number) => void;
   onSeek: (time: number) => void;
@@ -15,6 +16,7 @@ function YouTubePlayer({
   videoId,
   isPlaying,
   currentTime,
+  canControl = true,
   onPlay,
   onPause,
   onSeek,
@@ -59,7 +61,7 @@ function YouTubePlayer({
       );
 
       // Don't send remote changes back
-      if (!isRemoteUpdate.current) {
+      if (!isRemoteUpdate.current && canControl) {
         onPlay(time);
       }
 
@@ -76,7 +78,7 @@ function YouTubePlayer({
       );
 
       // Don't send remote changes back
-      if (!isRemoteUpdate.current) {
+      if (!isRemoteUpdate.current && canControl) {
         onPause(time);
       }
 
@@ -168,88 +170,60 @@ function YouTubePlayer({
 
   const opts = {
     width: "100%",
-    height: "450",
-
+    height: "100%",
     playerVars: {
       autoplay: 0,
       controls: 1,
       rel: 0,
       modestbranding: 1,
+      origin: window.location.origin,
     },
   };
 
   return (
-    <div
-      style={{
-        width: "100%",
-        maxWidth: "800px",
-        margin: "20px auto",
-      }}
-    >
-      <YouTube
-        videoId={videoId}
-        onReady={handleReady}
-        onStateChange={handleStateChange}
-        onPlaybackRateChange={
-          handlePlaybackRateChange
-        }
-        opts={opts}
-      />
-
-      {/* SEEK BUTTONS FOR TESTING */}
-
-      <div
-        style={{
-          marginTop: "10px",
-          display: "flex",
-          gap: "10px",
-        }}
-      >
-        <button
-          onClick={() => {
-            if (!playerRef.current) {
-              return;
-            }
-
-            const newTime =
-              Math.max(
-                0,
-                playerRef.current.getCurrentTime() -
-                  10
-              );
-
-            playerRef.current.seekTo(
-              newTime,
-              true
-            );
-
-            onSeek(newTime);
-          }}
-        >
-          ⏪ -10 sec
-        </button>
-
-        <button
-          onClick={() => {
-            if (!playerRef.current) {
-              return;
-            }
-
-            const newTime =
-              playerRef.current.getCurrentTime() +
-              10;
-
-            playerRef.current.seekTo(
-              newTime,
-              true
-            );
-
-            onSeek(newTime);
-          }}
-        >
-          ⏩ +10 sec
-        </button>
+    <div className="player-wrapper">
+      <div className="player-responsive">
+        <YouTube
+          videoId={videoId}
+          className="youtube-iframe"
+          onReady={handleReady}
+          onStateChange={handleStateChange}
+          onPlaybackRateChange={
+            handlePlaybackRateChange
+          }
+          opts={opts}
+        />
       </div>
+
+      {/* SEEK CONTROLS (Enabled if permitted) */}
+      {canControl && (
+        <div className="player-quick-scrub">
+          <button
+            type="button"
+            className="quick-scrub-btn"
+            onClick={() => {
+              if (!playerRef.current) return;
+              const newTime = Math.max(0, playerRef.current.getCurrentTime() - 10);
+              playerRef.current.seekTo(newTime, true);
+              onSeek(newTime);
+            }}
+          >
+            ⏪ -10s
+          </button>
+          <button
+            type="button"
+            className="quick-scrub-btn"
+            onClick={() => {
+              if (!playerRef.current) return;
+              const newTime = playerRef.current.getCurrentTime() + 10;
+              playerRef.current.seekTo(newTime, true);
+              onSeek(newTime);
+            }}
+          >
+            ⏩ +10s
+          </button>
+        </div>
+      )}
     </div>
   );
 }

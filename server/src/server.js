@@ -52,10 +52,26 @@ const io = new Server(server, {
 });
 
 // =====================================
+// =====================================
 // SOCKET ROOMS
 // =====================================
 
 const rooms = {};
+const roomStates = {};
+
+// Helper: check if user can control playback (HOST or MODERATOR)
+function canControlPlayback(roomId, socketId) {
+  if (!rooms[roomId]) return false;
+  const user = rooms[roomId].find((u) => u.socketId === socketId);
+  return user && (user.role === "HOST" || user.role === "MODERATOR");
+}
+
+// Helper: check if user is HOST
+function isHost(roomId, socketId) {
+  if (!rooms[roomId]) return false;
+  const user = rooms[roomId].find((u) => u.socketId === socketId);
+  return user && user.role === "HOST";
+}
 
 // =====================================
 // SOCKET CONNECTION
@@ -95,6 +111,14 @@ io.on("connection", (socket) => {
 
     if (!rooms[roomId]) {
       rooms[roomId] = [];
+    }
+
+    if (!roomStates[roomId]) {
+      roomStates[roomId] = {
+        videoId: null,
+        currentTime: 0,
+        isPlaying: false,
+      };
     }
 
     // =====================================
@@ -183,6 +207,21 @@ io.on("connection", (socket) => {
         participants: participantList,
       }
     );
+
+    // =====================================
+    // SYNC STATE TO NEW PARTICIPANT
+    // =====================================
+
+    if (roomStates[roomId] && roomStates[roomId].videoId) {
+      console.log(
+        `Syncing current state to new participant ${username} in ${roomId}`
+      );
+      socket.emit("sync-state", {
+        videoId: roomStates[roomId].videoId,
+        currentTime: roomStates[roomId].currentTime,
+        isPlaying: roomStates[roomId].isPlaying,
+      });
+    }
   });
 
   // =====================================
@@ -203,6 +242,20 @@ io.on("connection", (socket) => {
         "VIDEO PLAY ERROR: roomId missing"
       );
       return;
+    }
+
+    // Role enforcement
+    if (!canControlPlayback(roomId, socket.id)) {
+      console.log(`Permission denied: ${socket.username} cannot play`);
+      socket.emit("permission-denied", {
+        message: "Only Host and Moderator can control playback",
+      });
+      return;
+    }
+
+    if (roomStates[roomId]) {
+      roomStates[roomId].isPlaying = true;
+      roomStates[roomId].currentTime = currentTime || 0;
     }
 
     console.log(
@@ -240,6 +293,20 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // Role enforcement
+    if (!canControlPlayback(roomId, socket.id)) {
+      console.log(`Permission denied: ${socket.username} cannot pause`);
+      socket.emit("permission-denied", {
+        message: "Only Host and Moderator can control playback",
+      });
+      return;
+    }
+
+    if (roomStates[roomId]) {
+      roomStates[roomId].isPlaying = false;
+      roomStates[roomId].currentTime = currentTime || 0;
+    }
+
     console.log(
       `Broadcasting PAUSE to room ${roomId} at ${
         currentTime || 0
@@ -275,6 +342,19 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // Role enforcement
+    if (!canControlPlayback(roomId, socket.id)) {
+      console.log(`Permission denied: ${socket.username} cannot seek`);
+      socket.emit("permission-denied", {
+        message: "Only Host and Moderator can seek video",
+      });
+      return;
+    }
+
+    if (roomStates[roomId]) {
+      roomStates[roomId].currentTime = currentTime || 0;
+    }
+
     console.log(
       `Broadcasting SEEK to room ${roomId} at ${
         currentTime || 0
@@ -291,6 +371,219 @@ io.on("connection", (socket) => {
   });
 
   // =====================================
+  // CHANGE VIDEO (SYNCHRONIZED)
+  // =====================================
+
+  socket.on("change-video", (data) => {
+    console.log("\nCHANGE VIDEO:");
+    console.log(data);
+
+    const { roomId, videoId } = data || {};
+
+    if (!roomId || !videoId) {
+      console.log("CHANGE VIDEO ERROR: roomId or videoId missing");
+      return;
+    }
+
+    // Role enforcement
+    if (!canControlPlayback(roomId, socket.id)) {
+      console.log(`Permission denied: ${socket.username} cannot change video`);
+      socket.emit("permission-denied", {
+        message: "Only Host and Moderator can change video",
+      });
+      return;
+    }
+
+    if (!roomStates[roomId]) {
+      roomStates[roomId] = { videoId: null, currentTime: 0, isPlaying: false };
+    }
+
+    roomStates[roomId].videoId = videoId;
+    roomStates[roomId].currentTime = 0;
+    roomStates[roomId].isPlaying = false;
+
+    console.log(`Broadcasting CHANGE_VIDEO ${videoId} to room ${roomId}`);
+
+    // Broadcast change-video to everyone in the room (including sender or socket.to)
+    io.to(roomId).emit("change-video", { videoId });
+  });
+
+  // =====================================
+  // ROLE ASSIGNMENT (HOST ONLY)
+  // =====================================
+
+  socket.on("assign-role", (data) => {
+    const { roomId, targetUsername, newRole } = data || {};
+
+    if (!roomId || !targetUsername || !newRole) return;
+
+    if (!isHost(roomId, socket.id)) {
+      socket.emit("permission-denied", {
+        message: "Only the Host can assign roles",
+      });
+      return;
+    }
+
+    if (!rooms[roomId]) return;
+
+    const targetUser = rooms[roomId].find((u) => u.username === targetUsername);
+    if (targetUser) {
+      console.log(`Host changed ${targetUsername} role to ${newRole}`);
+      targetUser.role = newRole;
+
+      const participantList = rooms[roomId].map((user) => ({
+        username: user.username,
+        role: user.role,
+      }));
+
+      io.to(roomId).emit("participants-updated", {
+        participants: participantList,
+      });
+
+      io.to(roomId).emit("role-assigned", {
+        targetUsername,
+        newRole,
+      });
+    }
+  });
+
+  // =====================================
+  // REMOVE PARTICIPANT (HOST ONLY)
+  // =====================================
+
+  socket.on("remove-participant", (data) => {
+    const { roomId, targetUsername } = data || {};
+
+    if (!roomId || !targetUsername) return;
+
+    if (!isHost(roomId, socket.id)) {
+      socket.emit("permission-denied", {
+        message: "Only the Host can remove participants",
+      });
+      return;
+    }
+
+    if (!rooms[roomId]) return;
+
+    const index = rooms[roomId].findIndex((u) => u.username === targetUsername);
+    if (index !== -1) {
+      const removedUser = rooms[roomId][index];
+      rooms[roomId].splice(index, 1);
+
+      console.log(`Host removed ${targetUsername} from room ${roomId}`);
+
+      // Notify the removed socket
+      io.to(removedUser.socketId).emit("kicked", {
+        message: "You were removed from the room by the host",
+      });
+
+      const removedSocket = io.sockets.sockets.get(removedUser.socketId);
+      if (removedSocket) {
+        removedSocket.leave(roomId);
+        removedSocket.roomId = null;
+      }
+
+      const participantList = rooms[roomId].map((user) => ({
+        username: user.username,
+        role: user.role,
+      }));
+
+      io.to(roomId).emit("participants-updated", {
+        participants: participantList,
+      });
+    }
+  });
+
+  // =====================================
+  // CHAT MESSAGE
+  // =====================================
+
+  socket.on("chat-message", (data) => {
+    const { roomId, message, username, role } = data || {};
+
+    if (!roomId || !message || !message.trim()) return;
+
+    const user = rooms[roomId]?.find((u) => u.socketId === socket.id);
+    const senderName = username || user?.username || "Guest";
+    const senderRole = role || user?.role || "PARTICIPANT";
+
+    const chatPayload = {
+      id: Date.now() + "-" + Math.random().toString(36).substring(2, 7),
+      text: message.trim(),
+      username: senderName,
+      role: senderRole,
+      timestamp: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+
+    io.to(roomId).emit("chat-message", chatPayload);
+  });
+
+  // =====================================
+  // EMOJI REACTIONS
+  // =====================================
+
+  socket.on("send-reaction", (data) => {
+    const { roomId, emoji, username } = data || {};
+
+    if (!roomId || !emoji) return;
+
+    io.to(roomId).emit("receive-reaction", {
+      id: Date.now() + "-" + Math.random().toString(36).substring(2, 7),
+      emoji,
+      username: username || socket.username || "Anonymous",
+    });
+  });
+
+  // =====================================
+  // LEAVE ROOM
+  // =====================================
+
+  const handleLeaveRoom = () => {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms[roomId]) return;
+
+    const index = rooms[roomId].findIndex(
+      (user) => user.socketId === socket.id
+    );
+
+    if (index === -1) return;
+
+    const removedUser = rooms[roomId][index];
+    rooms[roomId].splice(index, 1);
+
+    console.log(`${removedUser.username} left room ${roomId}`);
+
+    socket.leave(roomId);
+    socket.roomId = null;
+
+    // If host leaves, promote next participant to host
+    if (removedUser.role === "HOST" && rooms[roomId].length > 0) {
+      rooms[roomId][0].role = "HOST";
+      console.log(`${rooms[roomId][0].username} is now HOST`);
+    }
+
+    const participantList = rooms[roomId].map((user) => ({
+      username: user.username,
+      role: user.role,
+    }));
+
+    io.to(roomId).emit("participants-updated", {
+      participants: participantList,
+    });
+
+    if (rooms[roomId].length === 0) {
+      delete rooms[roomId];
+      delete roomStates[roomId];
+      console.log(`Room ${roomId} deleted`);
+    }
+  };
+
+  socket.on("leave-room", handleLeaveRoom);
+
+  // =====================================
   // DISCONNECT
   // =====================================
 
@@ -300,102 +593,7 @@ io.on("connection", (socket) => {
       socket.id
     );
 
-    // =====================================
-    // GET ROOM ID
-    // =====================================
-
-    const roomId = socket.roomId;
-
-    if (!roomId) {
-      console.log(
-        "Socket was not inside a room"
-      );
-      return;
-    }
-
-    // =====================================
-    // CHECK ROOM
-    // =====================================
-
-    if (!rooms[roomId]) {
-      return;
-    }
-
-    // =====================================
-    // FIND USER
-    // =====================================
-
-    const index =
-      rooms[roomId].findIndex(
-        (user) =>
-          user.socketId === socket.id
-      );
-
-    if (index === -1) {
-      return;
-    }
-
-    // =====================================
-    // REMOVE USER
-    // =====================================
-
-    const removedUser =
-      rooms[roomId][index];
-
-    rooms[roomId].splice(index, 1);
-
-    console.log(
-      `${removedUser.username} left room ${roomId}`
-    );
-
-    // =====================================
-    // IF HOST LEAVES
-    // MAKE FIRST PARTICIPANT HOST
-    // =====================================
-
-    if (
-      removedUser.role === "HOST" &&
-      rooms[roomId].length > 0
-    ) {
-      rooms[roomId][0].role = "HOST";
-
-      console.log(
-        `${rooms[roomId][0].username} is now HOST`
-      );
-    }
-
-    // =====================================
-    // CREATE UPDATED PARTICIPANT LIST
-    // =====================================
-
-    const participantList =
-      rooms[roomId].map((user) => ({
-        username: user.username,
-        role: user.role,
-      }));
-
-    // =====================================
-    // SEND UPDATED PARTICIPANTS
-    // =====================================
-
-    io.to(roomId).emit(
-      "participants-updated",
-      {
-        participants: participantList,
-      }
-    );
-
-    // =====================================
-    // DELETE EMPTY ROOM
-    // =====================================
-
-    if (rooms[roomId].length === 0) {
-      delete rooms[roomId];
-
-      console.log(
-        `Room ${roomId} deleted`
-      );
-    }
+    handleLeaveRoom();
   });
 });
 
