@@ -111,7 +111,8 @@ function App() {
 
   // Initialize socket connection
   useEffect(() => {
-    const socket = io("http://localhost:5000");
+    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    const socket = io(API_URL);
     socketRef.current = socket;
 
     socket.on("connect", () => {
@@ -278,7 +279,8 @@ function App() {
     setMessage("");
 
     try {
-      const response = await fetch("http://localhost:5000/api/rooms/create", {
+      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+      const response = await fetch(`${API_URL}/api/rooms/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: username.trim() }),
@@ -330,7 +332,8 @@ function App() {
 
     try {
       const formattedCode = joinRoomId.trim().toUpperCase();
-      const response = await fetch("http://localhost:5000/api/rooms/join", {
+      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+      const response = await fetch(`${API_URL}/api/rooms/join`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
